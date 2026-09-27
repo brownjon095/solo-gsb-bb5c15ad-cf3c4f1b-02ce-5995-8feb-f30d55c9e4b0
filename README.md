@@ -24,7 +24,10 @@
    边状态稳定的连续区间，逐段重算并报告不可能边 / 冲突链相对当前结果的新增与消失；
 7. 一键**全局时序可行性检查**：把全部事件区间与全部有效约束联立求解（差分约束），
    可行时给出每个事件的最早可行时刻作为见证，无解时给出一条带事件 ID、约束 ID 与
-   两端冲突界限的矛盾路径——包括"每条边单独可行、整条路径无解"的隐蔽情形。
+   两端冲突界限的矛盾路径——包括"每条边单独可行、整条路径无解"的隐蔽情形；
+8. 无解时的**约束撤销建议**：沿矛盾路径搜索需撤销的最少人工/导入约束
+   （source_order 时序边与事件区间不可撤销），每个候选用原求解器复核并附撤销后的
+   全量可行见证；至多展示 5 个同样最少的方案，预览不写入数据库。
 
 ---
 
@@ -64,6 +67,7 @@ python tests/test_engine.py      # 纯标准库，覆盖时间解析 / 冲突 / 
 python tests/test_scenarios.py   # 纯标准库，覆盖方案快照 CRUD / 对比差异（冲突/歧义/边/时间线逆序对）
 python tests/test_sensitivity.py # 纯标准库，覆盖偏移敏感性：临界点解析 / offset 抵消 / 区间差异 / 输入校验
 python tests/test_feasibility.py # 纯标准库，覆盖全局时序可行性：DAG 传播 / 环交集 / 矛盾路径 / 5000 事件无递归
+python tests/test_retraction.py  # 纯标准库，覆盖约束撤销建议：最少撤销 / 多解 / 平行边 / 保护与预算限制
 ```
 
 ---
@@ -141,6 +145,30 @@ python tests/test_feasibility.py # 纯标准库，覆盖全局时序可行性：
    页面会明确提示"各边单独可行而整条路径无解"，这类矛盾用逐边检查永远发现不了。
 
 调整假设后点抽屉内 **⟳ 重新检查** 即可用新假设重算；检查不会保存任何假设。
+
+### 进一步：约束撤销建议（🪓，从可行性抽屉进入）
+
+全局联立无解时，可行性抽屉的矛盾路径下方会出现**约束撤销建议**区块
+（页面 `http://localhost:8000` → 右上 **🧭 全局时序可行性** → 无解时点
+**▶ 搜索撤销方案**；API 为 `POST /api/retraction-suggestions`）。它回答：
+**最少撤销哪些人工录入或导入的约束，全量联立就能恢复可行？**
+
+1. **可撤销范围**：只有人工/导入约束（`causal` / `claimed` 等非系统 kind）参与候选；
+   `source_order` 时序边与事件时间区间是观测事实，**不可撤销**；
+   页面**未保存的时钟假设**（overrides）参与每一次候选复核；
+2. **搜索方式**：沿矛盾路径做冲突驱动搜索——任何可行修复都必须命中当前矛盾路径
+   （至少打断其中一跳），撤销后仍无解时把新矛盾路径上的可撤销约束并入候选池，
+   按撤销 1 条、2 条、3 条逐层枚举，**每个候选都用原求解器复核**；
+   首个产出方案的层即最少撤销条数，该层方案同样最少；
+3. **结果**：至多展示 **5 个同样最少的方案**，每个方案列出约束 ID、端点
+   （from → to，可点击定位）与**撤销后的全量可行见证**（每个事件的最早可行时刻，
+   折叠展示、可展开）；搜索限定**最多撤销 3 条、最多 2000 次求解**，
+   触限时结果明确标为**未完成**（`complete=false`），只给候选、不称最优；
+4. **边界情形**：若撤销**全部**可撤销约束后仍无解（矛盾只由 source_order 边与
+   事件区间构成），明确报告"没有仅靠撤销约束的修复方案"并展示剩余矛盾路径；
+   若 3 条以内无解但全撤可行，提示需要同时撤销更多约束；
+5. **只读预览**：建议不写入数据库、不改写任何事件或假设；确认后可到右栏
+   「顺序约束」手动删除对应约束，或回左栏调整时钟假设后点 **⟳ 重新搜索** 重算。
 
 ---
 
@@ -250,6 +278,10 @@ gap ∈ [ lo_b - hi_a ,  hi_b - lo_a ]
 - **全局时序可行性**（右上 🧭）：全部事件区间 × 全部有效约束联立求解；可行时展示每个事件的
   最早可行时刻（见证，可过滤、可点击定位），无解时展示带事件 ID / 约束 ID / 两端冲突界限的
   矛盾路径；使用当前含未保存调整的假设，不受筛选影响，只读不改写数据。
+- **约束撤销建议**（可行性抽屉内，无解时出现）：沿矛盾路径搜索需撤销的最少人工/导入约束
+  （source_order 边与事件区间不可撤销），原求解器逐候选复核；至多 5 个同样最少的方案，
+  各附约束 ID、端点与撤销后全量可行见证；最多撤销 3 条、最多求解 2000 次，触限标未完成；
+  预览不写库，支持按当前假设重新搜索。
 
 ---
 
@@ -277,6 +309,7 @@ gap ∈ [ lo_b - hi_a ,  hi_b - lo_a ]
 | POST | `/api/compare/export` | 下载方案对比 JSON 证据包（侧引用可携带未保存 overrides，故为 POST） |
 | POST | `/api/offset-sensitivity` | 偏移敏感性扫描：解析临界点 → 稳定区间 → 逐段重算并与当前结果对比 |
 | POST | `/api/temporal-feasibility` | 全局时序可行性：全量事件区间 × 全部约束联立求解，返回最早可行时刻见证或矛盾路径 |
+| POST | `/api/retraction-suggestions` | 约束撤销建议：沿矛盾路径搜索需撤销的最少人工/导入约束，原求解器复核，返回至多 5 个同样最少的方案及撤销后全量可行见证（只读预览） |
 | GET | `/api/sample` | 下载内置示例 JSON |
 | POST | `/api/reset` | 清空全部数据 |
 | GET | `/api/health` | 健康检查（Compose healthcheck 使用） |
@@ -444,6 +477,43 @@ curl -o audit_result.json http://localhost:8000/api/export
   `all_edges_individually_feasible` 与 `explanation` 会明确标出；
 - 环（因果环）内事件取同一时刻：可行时这些事件的 `earliest` 相同且 `in_cycle=true`。
 
+`/api/retraction-suggestions` 请求体与响应示例（只接收 `overrides`，含未保存假设；只读预览）：
+
+```json
+// POST /api/retraction-suggestions
+{"overrides": {"app-server": {"clock_offset": 60}, "mobile-app": {"clock_offset": -30}}}
+```
+
+```json
+{
+  "suggestion_type": "constraint-retraction",
+  "status": "ok",
+  "complete": true,
+  "summary": "最少撤销 1 条约束即可恢复全局可行，共找到 1 个同样最少的方案……",
+  "limits": {"max_depth": 3, "max_solves": 2000, "max_solutions": 5},
+  "stats": {"event_count": 8, "constraint_count": 11,
+            "retractable_constraints": 6, "protected_constraints": 5, "solves_used": 3},
+  "min_retractions": 1,
+  "solutions_truncated": false,
+  "solutions": [{
+    "constraints": [{"id": 11, "from": "g3", "to": "a3", "kind": "claimed",
+                     "note": "应用方合规声明：导出发生在强制登出之后"}],
+    "witness": {"summary": "……", "stats": {"...": "..."},
+                "events": [{"id": "g1", "earliest": 1789123299.7,
+                            "earliest_text": "2026-09-18T08:01:39.700Z", "...": "..."}]}
+  }],
+  "remaining_witness": null,
+  "notice": "方案仅为预览：不写入数据库……"
+}
+```
+
+- `status`：`ok`（找到方案）/ `already_feasible`（当前已可行）/
+  `no_retraction_fix`（撤销全部可撤销约束仍无解，没有仅靠撤销约束的修复方案，
+  附 `remaining_witness` 剩余矛盾路径）/ `none_within_limits`（限制内无解）；
+- `complete=false` 表示求解次数触限、搜索**未完成**：此时 `solutions` 只是候选，
+  不能当作已穷尽的最优结论；`solutions_truncated=true` 表示同规模方案超过 5 个、仅展示前 5 个；
+- `solutions[].witness.events` 即撤销后全量可行见证（每个事件的最早可行时刻，形态同可行性检查）。
+
 交互式文档：启动后访问 `http://localhost:8000/docs`。
 
 ---
@@ -453,21 +523,23 @@ curl -o audit_result.json http://localhost:8000/api/export
 ```
 .
 ├── app/
-│   ├── main.py          # FastAPI 路由：导入/假设/重算/筛选/约束/方案 CRUD/对比/敏感性/时序可行性/导出/静态页
+│   ├── main.py          # FastAPI 路由：导入/假设/重算/筛选/约束/方案 CRUD/对比/敏感性/时序可行性/撤销建议/导出/静态页
 │   ├── engine.py        # 区间模型、边分类、约束传播、Tarjan 环、歧义聚类、稳定签名、导出
 │   ├── feasibility.py   # 全局时序可行性：差分约束联立求解（SCC + Kahn 最长路）、最早可行时刻见证、矛盾路径
+│   ├── retraction.py    # 约束撤销建议：沿矛盾路径的冲突驱动最小撤销搜索，原求解器复核，预算/深度限制
 │   ├── scenarios.py     # 命名假设方案快照 CRUD、双方案重算差异（冲突/歧义/边/时间线/参数）
 │   ├── sensitivity.py   # 偏移敏感性：临界点解析求解、稳定区间切分、逐段重算与差异配对
 │   ├── importer.py      # 多别名宽松 JSON 规范化、幂等入库、来源时序边重建
 │   ├── db.py            # SQLite 连接、建表初始化（含 scenarios 表）
 │   ├── timeutil.py      # 多格式时间戳解析（秒/毫秒/微秒/纳秒、ISO、RFC2822）
 │   ├── sample.py        # 内置示例案件
-│   └── static/          # 原生前端 index.html / style.css / app.js / compare.js / sensitivity.js / feasibility.js
+│   └── static/          # 原生前端 index.html / style.css / app.js / compare.js / sensitivity.js / feasibility.js / retraction.js
 ├── examples/login-anomaly.json
 ├── tests/test_engine.py      # 纯标准库测试（11 项）
 ├── tests/test_scenarios.py   # 方案快照与双方案对比测试（12 项）
 ├── tests/test_sensitivity.py # 偏移敏感性扫描测试（9 项）
 ├── tests/test_feasibility.py # 全局时序可行性测试（11 项，含 5000 事件规模与深环无递归）
+├── tests/test_retraction.py  # 约束撤销建议测试（12 项：最少撤销/多解/平行边/保护与预算限制）
 ├── docker/entrypoint.sh # 启动钩子：初始化数据库后拉起 uvicorn
 ├── Dockerfile
 ├── docker-compose.yml

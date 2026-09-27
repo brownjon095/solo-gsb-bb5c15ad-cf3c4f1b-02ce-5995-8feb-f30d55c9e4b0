@@ -537,6 +537,40 @@ body {
 .feas-note.ok { background: rgba(57,192,122,.1); border: 1px solid #2c5c44; color: #8ce0b4; }
 .feas-note.warn { background: rgba(232,163,61,.1); border: 1px solid #6e5323; color: #f0c273; }
 
+/* ---------------- 约束撤销建议（可行性抽屉内） ---------------- */
+.ret-block h3 { margin-bottom: 6px; }
+.ret-start { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.ret-head { margin-bottom: 4px; }
+.ret-icon.ok { background: rgba(57,192,122,.16); }
+.ret-icon.bad { background: rgba(229,83,75,.16); }
+.ret-icon.warn { background: rgba(232,163,61,.16); }
+.ret-title.ok { color: #8ce0b4; }
+.ret-title.bad { color: #ff9b94; }
+.ret-title.warn { color: #f0c273; }
+.ret-title .tag { margin-left: 6px; }
+
+.ret-card {
+  border: 1px solid var(--line); border-left: 3px solid var(--ok);
+  border-radius: 8px; background: var(--bg-2);
+  padding: 9px 12px; margin-top: 9px;
+}
+.ret-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 7px; }
+.ret-card-title { font-family: var(--mono); font-size: 12.5px; font-weight: 700; }
+.ret-constraints { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.ret-constraint {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  background: var(--bg); border: 1px solid #222d3b; border-radius: 7px;
+  padding: 5px 9px; font-size: 11.5px;
+}
+.ret-cid {
+  font-family: var(--mono); font-size: 11px; font-weight: 700; color: #ff9b94;
+  background: rgba(229,83,75,.12); border-radius: 5px; padding: 1px 6px;
+}
+.ret-kind { font-size: 10px; color: var(--muted); background: var(--bg-3); padding: 0 7px; border-radius: 9px; }
+.ret-note { font-size: 10.5px; color: #9fb0c4; }
+.ret-witness { margin-top: 7px; display: flex; flex-direction: column; gap: 4px; }
+.ret-witness-more { align-self: stretch; }
+
 @media (max-width: 900px) {
   .feas-row { grid-template-columns: 1fr; }
 }

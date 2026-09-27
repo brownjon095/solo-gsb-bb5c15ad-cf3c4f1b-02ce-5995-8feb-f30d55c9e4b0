@@ -23,6 +23,7 @@ function feasClose() {
 /* --------------------------------------------------------------- 检查 */
 
 async function feasRun() {
+  if (typeof retReset === "function") retReset();  // 重算时清掉过期的撤销建议
   const box = feas$("#feas-result");
   box.innerHTML = "";
   box.appendChild(el("div", "cmp-empty", "联立求解中…"));
@@ -58,6 +59,8 @@ function feasRender() {
     box.appendChild(feasWitnessBlock(d));
   } else {
     box.appendChild(feasConflictBlock(d.witness));
+    // 无解时提供约束撤销建议入口（retraction.js，预览不写库）
+    if (typeof retBlock === "function") box.appendChild(retBlock());
   }
 }
 
