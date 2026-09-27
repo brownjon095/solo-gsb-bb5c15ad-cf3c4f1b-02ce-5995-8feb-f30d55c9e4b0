@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import engine, feasibility, scenarios, sensitivity
+from . import engine, feasibility, revocation, scenarios, sensitivity
 from .db import db, init_db
 from .importer import import_payload, reset_all
 
@@ -20,7 +20,7 @@ STATIC_DIR = BASE_DIR / "static"
 app = FastAPI(
     title="事件证据链审计台",
     description="导入多来源 JSON 事件记录，校正时钟偏差，重建可解释时间线并定位冲突链。",
-    version="1.3.0",
+    version="1.4.0",
 )
 
 
@@ -94,6 +94,11 @@ class SensitivityBody(BaseModel):
 
 class FeasibilityBody(BaseModel):
     """全局时序可行性：只接收假设 overrides；不接受任何筛选参数（始终全量联立）。"""
+    overrides: dict[str, SourceAssumption] = Field(default_factory=dict)
+
+
+class RevocationBody(BaseModel):
+    """约束撤销建议：同样只接收假设 overrides（含未保存调整），只读预览。"""
     overrides: dict[str, SourceAssumption] = Field(default_factory=dict)
 
 
@@ -417,6 +422,23 @@ def temporal_feasibility(body: FeasibilityBody) -> dict[str, Any]:
     overrides = {sid: v.model_dump(exclude_none=True)
                  for sid, v in body.overrides.items()}
     result = feasibility.check_feasibility(overrides)
+    result["overrides_applied"] = overrides
+    return result
+
+
+@app.post("/api/temporal-feasibility/revocations")
+def temporal_feasibility_revocations(body: RevocationBody) -> dict[str, Any]:
+    """约束撤销建议（只读预览，不写数据库）。
+
+    全量联立无解时，沿矛盾路径搜索需撤销的最少人工/导入约束
+    （source_order 系统时序边与事件区间不可撤销），逐个候选用原求解器复核；
+    至多撤销 3 条、至多 2000 次求解、至多展示 5 个同样最少的方案，
+    触限时 complete=false 明确标为未完成。overrides 传页面当前
+    （含未保存）的时钟假设，与 /api/temporal-feasibility 一致。
+    """
+    overrides = {sid: v.model_dump(exclude_none=True)
+                 for sid, v in body.overrides.items()}
+    result = revocation.suggest_revocations(overrides)
     result["overrides_applied"] = overrides
     return result
 

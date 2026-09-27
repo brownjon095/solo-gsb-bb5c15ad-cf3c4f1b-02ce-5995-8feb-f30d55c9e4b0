@@ -46,10 +46,17 @@ EPS = engine.EPS
 # ------------------------------------------------------------ 内部结构
 
 class _Solver:
-    """一次可行性求解的全部中间状态（避免长参数链）。"""
+    """一次可行性求解的全部中间状态（避免长参数链）。
 
-    def __init__(self, overrides: dict | None):
-        stored_sources, raw_events, raw_edges = engine.load_model()
+    exclude：要视为"已撤销"的约束 id 集合（撤销建议预览用，只读不写库）；
+    model：预装载的 (sources, events, edges) 三元组，批量求解时避免重复读库。
+    """
+
+    def __init__(self, overrides: dict | None, exclude: set | None = None,
+                 model: tuple | None = None):
+        if model is None:
+            model = engine.load_model()
+        stored_sources, raw_events, raw_edges = model
         sources = engine._effective_sources(stored_sources, overrides)
         nodes = engine._build_nodes(raw_events, sources)
         self.nodes = nodes
@@ -63,6 +70,8 @@ class _Solver:
         self.edges: list[dict] = []
         skipped = 0
         for r in raw_edges:
+            if exclude and r.get("id") in exclude:
+                continue  # 撤销建议预览：该约束视为不存在（只读，不写库）
             u = self.id_idx.get(r["from_event"])
             v = self.id_idx.get(r["to_event"])
             if u is None or v is None:
@@ -348,9 +357,12 @@ class _Solver:
         return base
 
 
-def check_feasibility(overrides: dict | None = None) -> dict[str, Any]:
+def check_feasibility(overrides: dict | None = None,
+                      exclude: set | None = None,
+                      model: tuple | None = None) -> dict[str, Any]:
     """以当前生效假设（库存 + 页面未保存 overrides）联立求解全局时序可行性。
 
     只读：不写数据库、不改写事件或假设；不受页面筛选影响（全量事件与约束）。
+    exclude 用于撤销建议预览：视为已撤销的约束 id 集合（同样不落库）。
     """
-    return _Solver(overrides).result()
+    return _Solver(overrides, exclude=exclude, model=model).result()

@@ -164,13 +164,15 @@
       <h2>🧭 全局时序可行性检查</h2>
       <p class="subtitle">以当前（含未保存调整）的时钟假设，把<b>全部事件</b>的真实时间区间与<b>全部有效约束</b>联立求解：
         每个事件取闭区间内一个时刻，边 a→b 要求 t_b ≥ t_a（环允许同刻，但环内区间必须有公共交集）。
-        不受页面筛选影响，只读检查，不改写任何事件或假设。</p>
+        不受页面筛选影响，只读检查，不改写任何事件或假设。
+        无解时可在矛盾路径下方进一步<b>搜索约束撤销建议</b>（预览，不写库）。</p>
       <div class="overlay-actions">
         <button class="btn tiny primary" id="feas-rerun">⟳ 重新检查</button>
         <button class="btn tiny ghost" id="feas-close">✕ 关闭</button>
       </div>
     </div>
     <div id="feas-result" class="cmp-result"></div>
+    <div id="rev-result" class="cmp-result" style="padding-top:0"></div>
   </div>
 </div>
 
